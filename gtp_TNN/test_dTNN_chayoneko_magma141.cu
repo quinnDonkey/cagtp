@@ -40,8 +40,8 @@ double run_TNN ( real_t * A, real_t * C, int n, int d, int t, int rep, int dev )
 	data.A       = A;
 	data.B       = A;
 	data.C       = C;
-	data.alpha   = ( real_t ) 1.0;
-	data.beta    = ( real_t ) 0.0;
+	data.alpha   = ( real_t ) -2.0;
+	data.beta    = ( real_t ) 1.0;
 	data.m       = n;
 	data.n       = n;
 	data.k       = d;
@@ -51,17 +51,28 @@ double run_TNN ( real_t * A, real_t * C, int n, int d, int t, int rep, int dev )
 	data.offsetA = 0;
 	data.offsetB = 0;
 
-	struct timeval tb, te;
 	task_t task;
 
 	dim3 dim_block ( 16, 16 );
 	int nby = CEIL_DIV ( n, 64 );
 
+	priority_queue < n_t > * pq = new priority_queue < n_t >[n];
+
+	cublasHandle_t handle;
+	SAFE_CALL ( cublasCreate ( &handle ) );
+	real_t *norm;
+	SAFE_CALL( cudaHostAlloc ( &norm, sizeof( real_t ) * n, cudaHostAllocDefault ) );
+	for ( int i = 0; i < n; ++i )
+		SAFE_CALL( cublasDnrm2( handle, n, A + i, n, norm + i ) );
+	for ( int i = 0; i < n; ++i ) for( int j = 0; j <= n; ++j )
+		C[ i * n + j] = norm[i] + norm[j];
+
+	SAFE_CALL ( cublasDestroy ( handle ) );
+
 	gpu_thread_pool_t < task_t, common_data_t, 1 > gtp ( data, 2, dim_block, 1, dev );
 	gtp.run ( );
 
-	priority_queue < n_t > * pq = new priority_queue < n_t >[n];
-
+	struct timeval tb, te;
 	gettimeofday ( &tb, NULL );
 	for ( int r = 0; r < rep; ++r ) {
 		int cnt = 0;
@@ -102,6 +113,7 @@ double run_TNN ( real_t * A, real_t * C, int n, int d, int t, int rep, int dev )
 	gtp.synchronize ( );
 
 	delete [] pq;
+	SAFE_CALL( cudaFreeHost( norm ) );
 	cudaUnbindTexture ( tex_ref_B );
 	cudaUnbindTexture ( tex_ref_A );
 	return te.tv_sec - tb.tv_sec + ( te.tv_usec - tb.tv_usec ) * 1E-6;

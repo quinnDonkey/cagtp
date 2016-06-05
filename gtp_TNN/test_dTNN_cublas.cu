@@ -24,10 +24,19 @@ double run_TNN ( real_t * A, real_t * C, int n, int d, int t, int rep, int dev )
 
 	int lda = n;
 	int ldc = n;
-	real_t alpha = ( real_t ) 1.0;
-	real_t  beta = ( real_t ) 0.0;
+	real_t alpha = ( real_t ) -2.0;
+	real_t  beta = ( real_t ) 1.0;
 
 	priority_queue < n_t > * pq = new priority_queue < n_t >[n];
+	
+	real_t *norm;
+	SAFE_CALL( cudaHostAlloc ( &norm, sizeof( real_t ) * n, cudaHostAllocDefault ) );
+
+	for ( int i = 0; i < n; ++i )
+		SAFE_CALL( cublasDnrm2( handle, n, A + i, n, norm + i ) );
+
+	for ( int i = 0; i < n; ++i ) for( int j = 0; j <= n; ++j )
+		C[ i * n + j] = norm[i] + norm[j];
 
 	struct timeval tb, te;
 	gettimeofday ( &tb, NULL );
@@ -56,5 +65,6 @@ double run_TNN ( real_t * A, real_t * C, int n, int d, int t, int rep, int dev )
 
 	delete [] pq;
 	SAFE_CALL ( cublasDestroy ( handle ) );
+	SAFE_CALL( cudaFreeHost( norm ) );
 	return te.tv_sec - tb.tv_sec + ( te.tv_usec - tb.tv_usec ) * 1E-6;
 }
